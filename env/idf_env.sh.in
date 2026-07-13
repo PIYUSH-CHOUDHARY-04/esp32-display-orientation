@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+##
+# @file idf_env.sh
+# @brief Generated ESP-IDF environment. DO NOT EDIT, DO NOT COMMIT.
+#
+# This file is written by @c install.sh from @c env/idf_env.sh.in with the ESP-IDF
+# location discovered on THIS machine substituted in. It is therefore machine-specific
+# and is listed in @c .gitignore -- the repository carries the template, the install
+# carries the facts.
+#
+# ### Why this is generated rather than shipped
+# The IDF lives in a different place on every machine: Espressif's installer defaults to
+# @c ~/esp/esp-idf, distro packages use @c /opt/esp-idf, and a hand-rolled tree can be
+# anywhere at all. A committed file with a hardcoded @c IDF_PATH is correct for exactly
+# one developer and broken for everybody else, so the path is resolved once, at install
+# time, and frozen here.
+#
+# Re-run @c ./install.sh to regenerate after moving the IDF.
+#
+# ### Usage
+# Sourced automatically by @c install.sh inside a subshell. It can also be sourced by
+# hand for an interactive session:
+# @code
+#   source env/idf_env.sh
+#   idf.py build
+# @endcode
+#
+# @warning Must be SOURCED, not executed: it exports variables into the calling shell,
+#          and a child process cannot do that for its parent.
+##
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	echo "ERROR: this script must be sourced, not executed." >&2
+	echo "       use: source ${BASH_SOURCE[0]}" >&2
+	exit 1
+fi
+
+##
+# @brief Discovered ESP-IDF location, substituted at install time.
+##
+export IDF_PATH="@IDF_PATH@"
+
+##
+# @brief Toolchain install root.
+#
+# Where the xtensa compiler and the IDF's Python virtualenv live. Espressif defaults this
+# to @c ~/.espressif; the value below is whatever was in effect when install.sh ran, so a
+# custom location is preserved.
+##
+export IDF_TOOLS_PATH="@IDF_TOOLS_PATH@"
+
+##
+# @brief Target chip.
+#
+# Fixed for this project: the firmware is written against the ESP32's peripherals and is
+# not portable to the S2/S3/C3 variants without changes.
+##
+export IDF_TARGET="esp32"
+
+##
+# @brief Default serial port for flash and monitor.
+#
+# Overridable per-invocation without touching this file:
+# @code
+#   ESPPORT=/dev/ttyUSB1 ./install.sh flash
+#   ./install.sh -p /dev/ttyUSB1 flash          # idf.py's own flag, forwarded
+# @endcode
+##
+export ESPPORT="${ESPPORT:-@ESPPORT@}"
+
+##
+# Bring in the IDF's own environment: the xtensa toolchain, the Python virtualenv, and
+# idf.py itself, all onto PATH.
+#
+# This is sourced LAST, after IDF_PATH and IDF_TOOLS_PATH are set, because export.sh reads
+# both of them to decide what to activate.
+##
+if [ ! -f "$IDF_PATH/export.sh" ]; then
+	echo "ERROR: ESP-IDF not found at: $IDF_PATH" >&2
+	echo "       re-run ./install.sh to re-detect it." >&2
+	return 1
+fi
+
+source "$IDF_PATH/export.sh"

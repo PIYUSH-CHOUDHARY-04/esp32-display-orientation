@@ -1,0 +1,317 @@
+# Doxyfile -- ESP32 display-orientation project
+#
+# ONE build at the repository root, covering client/, common/ and mcu/ together.
+#
+# Not three separate builds, and the reason is common/: common.h defines the wire protocol that
+# BOTH sides use. The PC's main.c and the ESP's wifi_mgr.c each reference proto_packet_t,
+# _sta_credentials_t and the MSG_* enums. Build the two halves separately and neither can link to
+# those types -- they would live in a different doc set -- so the cross-references that make the
+# documentation worth reading are exactly the ones that break.
+#
+# One build, three @defgroups. Same navigation, but proto_packet_t is a single page that both
+# sides link to.
+#
+# USAGE
+#     doxygen Doxyfile                 # writes doxygen/html/index.html
+#     xdg-open doxygen/html/index.html
+#
+# OUTPUT_DIRECTORY is 'doxygen' rather than the more obvious 'docs' because mcu/docs already exists
+# and holds the datasheet PDFs. Two directories called docs, meaning entirely different things,
+# would be a trap -- and the EXCLUDE_PATTERNS below already have to filter */docs/* out of the
+# Doxygen input for exactly that reason.
+#
+# The output is gitignored. Generated documentation does not belong in version control: it is
+# derived from the source, it is large, and Doxygen rewrites nearly every file on every run -- so
+# a one-line comment change produces a fifty-file diff. Commit the Doxyfile, not its output. Same
+# reasoning as a Makefile: the recipe is source, the binary is not.
+
+#---------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------
+
+PROJECT_NAME           = "ESP32 Display Orientation"
+PROJECT_BRIEF          = "An ESP32 accelerometer rotates a Linux display over Wi-Fi"
+PROJECT_NUMBER         = 1.0
+
+# Do NOT repeat the @brief at the top of the Detailed Description.
+#
+# With this on (the default), every group and file page prints its one-line brief in the summary
+# and then AGAIN as the first sentence of the detail below it -- so a reader sees the same sentence
+# twice, one line apart, and it looks like a copy-paste mistake rather than a design.
+REPEAT_BRIEF           = NO
+
+OUTPUT_DIRECTORY       = doxygen
+CREATE_SUBDIRS         = NO
+OUTPUT_LANGUAGE        = English
+
+#---------------------------------------------------------------------------
+# What to read
+#---------------------------------------------------------------------------
+#
+# INPUT is deliberately a list of specific directories rather than just '.', because the
+# repository contains a great deal that is not ours: 1600-odd files of CMake output under
+# mcu/build, vendored drivers, and a docs/ directory full of datasheet PDFs. Naming what to read
+# is safer than naming everything and then subtracting.
+
+INPUT                  = README.md \
+                         groups.dox \
+                         client/source \
+                         client/include \
+                         common \
+                         mcu/main \
+                         mcu/components
+
+# The main page of the generated docs is the project README, so there is one story rather than
+# two that drift apart.
+USE_MDFILE_AS_MAINPAGE = README.md
+
+FILE_PATTERNS          = *.c \
+                         *.h \
+                         *.md \
+                         *.dox
+
+RECURSIVE              = YES
+
+#---------------------------------------------------------------------------
+# What NOT to read
+#---------------------------------------------------------------------------
+#
+# Two quite different things are excluded here, and the distinction matters.
+#
+# 1. BUILD OUTPUT AND ARTEFACTS. Noise. Nobody wants CMake's generated .c files documented.
+#
+# 2. VENDORED CODE -- third-party drivers borrowed from GitHub. These are excluded because they
+#    are not ours to document: they carry their own upstream documentation and their own licences,
+#    and pulling them into our docs would misrepresent authorship, bloat the output, and mean our
+#    own five hundred lines of sensor code were buried under Bosch's five thousand.
+#
+#    The subtlety is that the vendored files do NOT live in directories of their own. We dropped
+#    our own code alongside them:
+#
+#        mcu/components/BMA400_SensorAPI/
+#            bma400.c, bma400.h, bma400_defs.h   <- Bosch's. Excluded.
+#            examples/                            <- Bosch's. Excluded.
+#            sensor.c, sensor.h                   <- OURS. Kept.
+#
+#        mcu/components/HD44780_LCD_I2C/
+#            hd44780.c, hd44780.h                 <- esp-idf-lib's. Excluded.
+#            esp_idf_lib_helpers.h, ets_sys.h     <- esp-idf-lib's. Excluded.
+#            lcd.c, lcd.h                         <- OURS. Kept.
+#
+#    So this cannot be done by excluding directories. Individual files have to be named -- which is
+#    what the EXCLUDE list below does.
+
+EXCLUDE                = mcu/components/BMA400_SensorAPI/bma400.c \
+                         mcu/components/BMA400_SensorAPI/bma400.h \
+                         mcu/components/BMA400_SensorAPI/bma400_defs.h \
+                         mcu/components/BMA400_SensorAPI/examples \
+                         mcu/components/BMA400_SensorAPI/README.md \
+                         mcu/components/BMA400_SensorAPI/LICENSE \
+                         mcu/components/HD44780_LCD_I2C/hd44780.c \
+                         mcu/components/HD44780_LCD_I2C/hd44780.h \
+                         mcu/components/HD44780_LCD_I2C/esp_idf_lib_helpers.h \
+                         mcu/components/HD44780_LCD_I2C/ets_sys.h
+
+# Build output, generated files, scratch files. Everything here is either machine-written or was
+# never meant to be committed.
+EXCLUDE_PATTERNS       = */build/* \
+                         */docs/* \
+                         doxygen/* \
+                         *sdkconfig* \
+                         *.log \
+                         *Untitled* \
+                         tree.txt \
+                         size-components.txt \
+                         env_activate.sh
+
+EXCLUDE_SYMLINKS       = YES
+
+#---------------------------------------------------------------------------
+# Extraction
+#---------------------------------------------------------------------------
+#
+# EXTRACT_STATIC is essential here and is off by default. Almost every function in this codebase is
+# static -- the file-scope helpers with the __double_underscore__ and _single_underscore_ names --
+# and without this flag Doxygen would silently omit nearly all of them, leaving documentation that
+# showed only the handful of entry points and none of the code that does the work.
+
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_LOCAL_CLASSES  = YES
+
+# HIDE_UNDOC_MEMBERS is deliberately OFF.
+#
+# Turning it on does silence the "LOG_TAG is not documented" noise -- but it also removes those
+# macros from the index entirely, and the sources REFER to them: sensor.c writes "::PRINT_MSG" in its
+# file header. A hidden macro cannot be linked to, so hiding them trades one warning for another and
+# breaks a legitimate cross-reference in the process.
+#
+# WARN_IF_UNDOCUMENTED below does the actual job: it stops Doxygen demanding a comment for every
+# build switch, while leaving the symbols visible and linkable.
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+# Warn about anything documented that should not be, and anything undocumented that should be.
+# These are how the docs stay honest as the code changes.
+# WARN_IF_UNDOCUMENTED is OFF.
+#
+# It fires on every undocumented symbol, and most of the undocumented symbols here are things that
+# should stay undocumented: the LOG_TAG / LOG_COMPONENT_* build switches, the file-static state
+# structs (gs, ws, goc, ds), the internal fields of log.h's colour table. Writing a doc comment for
+# '#define LOG_TAG "ap_prov"' adds noise and nothing else.
+#
+# The cost of leaving it on is worse than it looks: forty warnings nobody reads is a warning list
+# that HIDES the real ones. WARN_IF_DOC_ERROR stays on, and that is the one that matters -- it
+# catches malformed annotations, which are actual mistakes.
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_AS_ERROR          = NO
+
+# WARN_NO_PARAMDOC is OFF, and deliberately so.
+#
+# Declaring a function in a header and defining it in a .c is ordinary C, and documenting it in both
+# places is ordinary practice: the header block is for the caller, the source block for the
+# maintainer. Doxygen merges the two and then reports that every parameter has "multiple @param
+# documentation sections" -- which is not a defect in the annotation, it is Doxygen narrating its own
+# merge.
+#
+# The alternative would be to strip the @param blocks from every header, leaving a caller reading
+# netlink_monitor.h with no description of the argument they have to pass. That is a worse header for
+# a tidier warning list, which is the wrong trade.
+WARN_NO_PARAMDOC       = NO
+
+# Sort by the order they appear in the source, not alphabetically. Related functions were written
+# next to each other for a reason, and alphabetical order destroys that.
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+
+# A function declared in a header and defined in a .c is ONE function, and it is normal C practice
+# to document it in both places -- the header for the caller, the source for the maintainer.
+#
+# Doxygen, by default, merges the two comment blocks and then complains that every parameter has
+# "multiple @param documentation sections". That is not a mistake in the annotation; it is Doxygen
+# describing its own merge. Taking the documentation from the DEFINITION (the .c) resolves it: the
+# header's block still shows in the header's own page, but the merged entry has one @param per
+# parameter, as it should.
+INLINE_INHERITED_MEMB  = NO
+DISTRIBUTE_GROUP_DOC   = NO
+
+#---------------------------------------------------------------------------
+# Preprocessing
+#---------------------------------------------------------------------------
+#
+# MACRO_EXPANSION is ON, but EXPAND_ONLY_PREDEF restricts it to the macros named in PREDEFINED
+# below -- nothing else is touched.
+#
+# Both halves of that are necessary, and neither works alone:
+#
+#   - Expansion must be ON, or PREDEFINED is ignored entirely, and Doxygen keeps mis-parsing
+#     'static void IRAM_ATTR __sensor_int_isr__(...)' as a function returning IRAM_ATTR.
+#
+#   - It must be restricted, or every PRINT_MSG(...) in the sources gets expanded into the fprintf
+#     machinery underneath it, and the documentation fills up with logging plumbing instead of the
+#     program.
+#
+# EXPAND_ONLY_PREDEF gives exactly that: expand the handful we name, leave everything else as
+# written.
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = client/include \
+                         common
+
+# ESP-IDF headers are not present when the docs are built, and Doxygen would otherwise emit a wall
+# of "included file not found" warnings for every one of them. They contribute nothing to our
+# documentation anyway.
+# Macros Doxygen cannot see the definition of, because the headers that define them (ESP-IDF's, and
+# GCC's own) are not in INPUT. Left unknown, Doxygen mis-parses the declarations that use them:
+#
+#   static void IRAM_ATTR __sensor_int_isr__(void* arg)
+#
+# ...is read as a function whose return type is 'IRAM_ATTR', which then produces "return type of
+# member __sensor_int_isr__ is not documented" -- a warning about a return value that does not
+# exist. Defining them as empty makes the declarations parse as written.
+PREDEFINED             = __DOXYGEN__ \
+                         LOG_IMPLEMENTATION \
+                         IRAM_ATTR= \
+                         DRAM_ATTR= \
+                         "__attribute__(x)=" \
+                         "ESP_LOGE(...)=" \
+                         "ESP_LOGW(...)=" \
+                         "ESP_LOGI(...)=" \
+                         "ESP_LOGD(...)="
+
+#---------------------------------------------------------------------------
+# Source browsing
+#---------------------------------------------------------------------------
+#
+# Inlining the source is worth the page weight in a codebase where the reasoning lives in the
+# comments: a reader can go straight from "what does this do" to "how", without leaving the docs.
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+VERBATIM_HEADERS       = YES
+
+#---------------------------------------------------------------------------
+# Output
+#---------------------------------------------------------------------------
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_DYNAMIC_SECTIONS  = YES
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+
+# LaTeX is off. It needs a TeX distribution installed, takes minutes to run, and nobody reads a PDF
+# of API documentation.
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+
+#---------------------------------------------------------------------------
+# Diagrams
+#---------------------------------------------------------------------------
+#
+# Graphviz is optional: if dot is not installed, Doxygen still builds, it simply omits the graphs.
+# So this can be left on without making graphviz a hard dependency for anyone generating the docs.
+#
+# CALL_GRAPH is deliberately OFF. Turned on, it draws a graph for EVERY function -- hundreds of
+# them, most of which are two boxes and an arrow -- and the build time goes from seconds to
+# minutes. Turn it on later if it earns its keep, or enable it per-function with \callgraph in the
+# comment block of the handful where it actually helps.
+
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = NO
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = YES
+
+DOT_GRAPH_MAX_NODES    = 50
+MAX_DOT_GRAPH_DEPTH    = 3
+
+#---------------------------------------------------------------------------
+# C-specific
+#---------------------------------------------------------------------------
+
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+HIDE_SCOPE_NAMES       = NO
+
+# Show the full path relative to the repo root, so a reader can tell client/main.c from
+# mcu/main/main.c -- there are two files called main.c and they do entirely different things.
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+
+QUIET                  = NO

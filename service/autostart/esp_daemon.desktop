@@ -1,0 +1,67 @@
+##
+# @file esp_daemon.desktop
+# @brief XDG autostart entry -- the route for every system that is not systemd.
+#
+# Installed to ~/.config/autostart/esp_daemon.desktop and read by the DESKTOP SESSION at login.
+# NOT by the init system: OpenRC, runit, s6 and SysV never see a login event, which is the whole
+# reason this file exists rather than a service script.
+#
+# ### The problem this solves
+# The daemon rotates the screen with xrandr, which can only reach an X server if it holds that
+# session's DISPLAY and its XAUTHORITY cookie. A service started by a system init runs as root,
+# at BOOT -- when nobody has logged in, no X server exists, and there is no cookie to hold. Every
+# rotation is then refused by X, silently, while the daemon reports itself perfectly healthy.
+#
+# Those init systems offer no login hook to use instead. They have no concept of a login at all:
+# the display manager handles that, long after init has finished its work.
+#
+# ### Why the desktop session is the right place
+# Everything under ~/.config/autostart is launched AFTER the display manager has authenticated
+# the user, started X, and built the session environment. So the daemon starts as that user,
+# inside that session, with DISPLAY and XAUTHORITY already present in its environment.
+#
+# Nothing has to be substituted. Nothing has to be guessed. Nothing runs as root.
+#
+# ### This is not desktop-specific
+# The name misleads. XDG autostart is a freedesktop.org standard, implemented by GNOME, KDE, XFCE,
+# LXDE, MATE, Cinnamon, i3, sway and essentially everything else. One file works on all of them.
+# The dependency is on HAVING a graphical session -- which is required anyway, since xrandr is what
+# does the rotating.
+#
+# ### Per-user by construction
+# The file lives in the user's own home. Two people on one machine each get their own, each starts
+# with its owner's session and dies with it, and neither can overwrite the other. A service file in
+# /etc/init.d has none of those properties: there is exactly one of it, machine-wide, and the
+# second person to install it replaces the first.
+#
+# @note Exec= points at the WRAPPER, not at the daemon. Exec= is parsed by the desktop and is not a
+#       shell: loops, pipes and redirection do not work there, and quoting is mangled differently
+#       by different implementations. The restart loop therefore lives in esp_daemon-session, which
+#       is a real shell script.
+#
+# @note install.sh substitutes @BIN_DIR@.
+##
+
+[Desktop Entry]
+Type=Application
+Version=1.0
+
+Name=ESP32 Display Orientation
+Comment=Rotates the external display when the ESP32 accelerometer board is turned
+Icon=preferences-desktop-display
+
+# The wrapper, not the daemon -- see the note above.
+Exec=@BIN_DIR@/esp_daemon-session
+
+# Not a launcher: no window, no tray icon, nothing to click.
+NoDisplay=true
+Terminal=false
+
+# Autostart, while still letting the user disable it from their desktop's own
+# startup-applications UI without having to know this file exists.
+X-GNOME-Autostart-enabled=true
+
+# X11 only. xrandr cannot rotate a Wayland output -- the compositor owns it, not X -- so under
+# Wayland the daemon would connect to the ESP, acknowledge every command, and rotate nothing at
+# all. Desktops that honour this key simply will not start it there.
+OnlyShowIn=X-Cinnamon;GNOME;KDE;LXDE;MATE;XFCE;Unity;Pantheon;Budgie;Deepin;

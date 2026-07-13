@@ -1,0 +1,108 @@
+##
+# @file esp_daemon.service
+# @brief systemd USER unit for the orientation daemon. Installed by install.sh.
+#
+# Not a system unit. It is installed into ~/.config/systemd/user/ and enabled with
+#     systemctl --user enable esp_daemon
+# with no sudo anywhere.
+#
+# ### Why a user unit, and not a system one
+# The daemon rotates the display by running xrandr, and xrandr can only reach an X server if it
+# has that session's DISPLAY and its XAUTHORITY cookie. A root service started at boot has
+# neither: nobody is logged in yet, no X server exists, and there is no cookie to hold. X refuses
+# the connection, every rotation fails, and the daemon reports itself perfectly healthy while the
+# screen never moves.
+#
+# A user unit runs INSIDE the session it is trying to rotate, as the user who owns it, so it
+# inherits both variables for free -- exactly as a terminal does.
+#
+# ### Lifecycle
+# PartOf= and WantedBy= bind the daemon's lifetime to the graphical session:
+#   - the session starts -> the daemon starts
+#   - the session ends   -> the daemon is stopped IMMEDIATELY
+#
+# That second half is correct, not merely tidy. Once X is gone there is nothing left to rotate,
+# and a surviving daemon would sit in its heal loop retrying a rotation against a dead display
+# forever -- while still acknowledging every command the ESP sent, as though it were applying
+# them.
+#
+# @warning Do NOT enable lingering (loginctl enable-linger) for this service. Lingering keeps the
+#          user manager alive after logout, which defeats the session scoping above and leaves the
+#          daemon running in exactly the broken state it exists to avoid.
+#
+# @note install.sh substitutes @BIN_DIR@. Editing this file in the repo has no effect on an
+#       already-installed unit -- re-run ./install.sh install.
+##
+
+[Unit]
+Description=ESP32 accelerometer display-orientation daemon
+
+# ---------------------------------------------------------------------------------------------
+# Why default.target and not graphical-session.target
+#
+# graphical-session.target is the obvious choice, and it is what this unit used to hang off. It is
+# also, on a great many systems, a hook that NOTHING EVER PULLS.
+#
+# It is a CONVENTION, not a guarantee. systemd never reaches it on its own: the desktop environment
+# is supposed to activate it so that user services can bind to a session's lifetime. GNOME does.
+# KDE does. Cinnamon, XFCE, i3, sway and others frequently do not -- they start a perfectly good X
+# session and simply never tell systemd about it.
+#
+# On those systems the target sits inactive forever, and every unit wired to it is inert. "systemctl
+# --user enable" reports success, plants a symlink into graphical-session.target.wants/, and that
+# symlink is never read. The service appears enabled and never starts -- at install, at login, ever.
+# That failure is silent and extremely confusing, because every command you would think to run says
+# the right thing.
+#
+# default.target is reached at login, by every user manager, everywhere. It is the one target that
+# can be relied on.
+# ---------------------------------------------------------------------------------------------
+
+# What default.target does NOT tell us is whether there is a DISPLAY -- it is reached for an SSH
+# login just as surely as for a desktop one. So the graphical check moves here, where it can be
+# made explicitly: no DISPLAY, no start, and systemd records the skip rather than starting a daemon
+# that would fail every rotation it attempted.
+ConditionEnvironment=DISPLAY
+
+# Still bind the LIFETIME to the graphical session where one is advertised. On a desktop that does
+# pull the target, this keeps the original behaviour: the session ends, the daemon stops. Where
+# nothing pulls it, PartOf= is simply inert, and the daemon is stopped by the user manager shutting
+# down at logout instead -- which is the same outcome by a different route.
+PartOf=graphical-session.target
+After=graphical-session.target
+
+# Crash-loop protection. These are [Unit] directives, NOT [Service] ones -- put them under
+# [Service] and systemd ignores them with "Unknown key name", leaving Restart=on-failure to
+# respawn forever.
+#
+# The daemon already rediscovers the ESP by itself after every network failure, so a crash LOOP
+# means something is permanently wrong -- a missing xrandr, an unreachable display. Five failures
+# in a minute, and systemd gives up rather than spinning.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+ExecStart=@BIN_DIR@/esp_daemon
+
+# The daemon writes plain text to fd 1 and fd 2 and lets the init system decide where it lands
+# (see client/include/log.h). Under systemd that is journald, automatically:
+#     journalctl --user -u esp_daemon -f
+StandardOutput=journal
+StandardError=journal
+
+# Verbosity without recompiling. log.h reads LOG_LEVEL: error | warn | info | debug | verbose.
+# Uncomment for a chatty daemon:
+# Environment=LOG_LEVEL=debug
+
+# Recover from a crash, but do not fight a clean shutdown. Restart=always would treat the SIGTERM
+# at logout as something to restart, which is precisely what PartOf= exists to prevent.
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+# default.target, for the reasons above. graphical-session.target would be more precise if it were
+# reliably reached -- but a hook that is only sometimes activated is worse than a blunt one that
+# always is, because it fails silently and looks like it worked.
+WantedBy=default.target

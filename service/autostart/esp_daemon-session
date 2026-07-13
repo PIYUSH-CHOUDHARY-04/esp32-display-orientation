@@ -1,0 +1,123 @@
+#!/bin/sh
+##
+# @file esp_daemon-session
+# @brief Session wrapper: runs the daemon, and restarts it if it dies unexpectedly.
+#
+# Installed to ~/.local/bin/esp_daemon-session and launched by the XDG autostart entry at login.
+# On a non-systemd machine this is the supervisor -- all of it.
+#
+# ### Why a wrapper exists at all
+# The .desktop file's Exec= key is parsed by the DESKTOP, not by a shell. It is not a shell command
+# line: loops, pipes, redirection and shell quoting either do not work or are mangled differently by
+# different desktop implementations. Anything needing real shell semantics -- a restart loop, for
+# instance -- has to live in a script, with Exec= merely pointing at it.
+#
+# ### Why this much supervision is enough
+# The daemon barely needs restarting. Its main loop already funnels every failure back into
+# rediscovery and runs forever:
+# @verbatim
+#     while(1){
+#         discover_esp();       // fails? loop, retry
+#         start_tcp_client();   // session breaks? loop, rediscover
+#     }
+# @endverbatim
+# A vanished ESP, a changed IP, a dropped link -- all handled internally. The only things that
+# actually terminate it are a pthread failure, which a restart would walk straight back into, and
+# SIGTERM at logout, which must NOT be restarted. So this loop is a backstop against the crash that
+# should never happen, not a load-bearing supervisor.
+#
+# Worth stating plainly, because the alternative on a non-systemd box -- a root daemon started at
+# boot that watches for logins, locates the user's X cookie, and drops privileges to use it -- is a
+# session manager. Hundreds of lines of security-sensitive code, reimplementing what the desktop
+# session already does, to buy a restart the daemon does not need. This script is the whole of that
+# trade, honestly made.
+#
+# ### Signals: why the trap is load-bearing
+# At logout the session sends SIGTERM to everything it started, including this shell. Without the
+# trap, a naive loop would see the daemon die from that signal, call it a crash, and spawn a FRESH
+# daemon into a session that is being torn down -- which would then fail every rotation against a
+# dying X server until it was killed too.
+#
+# So: the daemon is backgrounded and waited on, SIGTERM and SIGINT are caught, the child is killed
+# explicitly, and the loop EXITS rather than restarting. A clean logout ends with no daemon and no
+# respawn.
+#
+# @note install.sh substitutes @BIN_DIR@.
+##
+
+DAEMON="@BIN_DIR@/esp_daemon"
+
+##
+# Seconds to wait before restarting after an unexpected exit.
+#
+# Not zero. A daemon that fails instantly and permanently -- a missing xrandr, say -- would
+# otherwise spin at full CPU, writing the same error to the log thousands of times a second. Two
+# seconds keeps genuine crash recovery quick while making a hard failure merely noisy rather than
+# harmful.
+##
+RESTART_DELAY=2
+
+##
+# Set by the signal handler when the session asks us to stop. The loop checks it and exits instead
+# of restarting -- the difference between a clean logout and an accidental respawn.
+##
+stopping=0
+child=""
+
+##
+# @brief Handle SIGTERM/SIGINT: kill the daemon, then stop looping.
+#
+# The child is killed explicitly rather than relying on it receiving its own SIGTERM: depending on
+# how the session tears down its process group, the signal may reach only this shell. Killing by PID
+# guarantees the daemon goes with it, and leaves no orphan.
+##
+on_term() {
+	stopping=1
+
+	if [ -n "$child" ]; then
+		kill -TERM "$child" 2>/dev/null
+		wait "$child" 2>/dev/null
+	fi
+
+	exit 0
+}
+
+trap on_term TERM INT
+
+if [ ! -x "$DAEMON" ]; then
+	echo "esp_daemon-session: $DAEMON not found or not executable" >&2
+	exit 1
+fi
+
+while [ "$stopping" -eq 0 ]; do
+	##
+	# Background the daemon and wait on it, rather than running it in the foreground.
+	#
+	# A foreground child makes the shell deaf to signals until that child exits -- so the SIGTERM
+	# at logout would sit unhandled and the trap above would never fire. Backgrounding and waiting
+	# keeps the shell responsive, which is exactly what makes logout work.
+	##
+	"$DAEMON" &
+	child=$!
+
+	wait "$child"
+	status=$?
+
+	if [ "$stopping" -eq 1 ]; then
+		break
+	fi
+
+	##
+	# 143 = 128 + 15 (SIGTERM); 130 = 128 + 2 (SIGINT). Either means somebody asked the daemon to
+	# stop, so stopping is right and restarting would be wrong -- even when the signal reached the
+	# daemon directly and never passed through the trap above.
+	##
+	if [ "$status" -eq 143 ] || [ "$status" -eq 130 ]; then
+		break
+	fi
+
+	echo "esp_daemon-session: daemon exited with status $status, restarting in ${RESTART_DELAY}s" >&2
+	sleep "$RESTART_DELAY"
+done
+
+exit 0

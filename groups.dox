@@ -1,0 +1,72 @@
+/**
+ * @file groups.dox
+ * @brief Doxygen module definitions. Not compiled -- read only by Doxygen.
+ *
+ * Declares the three groups the documentation is organised into. Each source file adds itself to
+ * one with @c \@ingroup, and Doxygen then builds the "Modules" tree from these definitions.
+ *
+ * This file contains no code and is never compiled: the @c .dox extension exists precisely so that
+ * a file can carry Doxygen comments without the build system trying to build it.
+ */
+
+/**
+ * @defgroup pc_client PC Client
+ * @brief The Linux side: the orientation daemon, and the provisioning utility.
+ *
+ * Two binaries, built from @c client/ by one Makefile:
+ *
+ * - **esp_daemon** -- the long-running daemon. It discovers the ESP on the local network, holds a
+ *   TCP session with it, and rotates the display with @c xrandr when an orientation command
+ *   arrives. Built from @c main.c and @c netlink_monitor.c.
+ *
+ * - **ap_provision** -- an interactive utility, run by hand. It stores the user's Wi-Fi
+ *   credentials encrypted at rest, and hands them to the ESP over its temporary provisioning
+ *   access point. Built from @c ap_provision.c.
+ *
+ * The two share nothing but @c common.h and @c log.h. They have separate lifetimes and
+ * separate concerns: one runs for the length of a login session, the other for the length of a
+ * single command.
+ *
+ * @warning The daemon must run inside the user's X session. @c xrandr can only reach an X server
+ *          if it holds that session's @c DISPLAY and its @c XAUTHORITY cookie, and a service
+ *          started as root at boot has neither -- so every rotation is silently refused while the
+ *          daemon reports itself perfectly healthy. See @c service/README.md.
+ */
+
+/**
+ * @defgroup esp_firmware ESP Firmware
+ * @brief The ESP32 side: accelerometer, Wi-Fi, LCD, and the provisioning server.
+ *
+ * The board reads a BMA400 accelerometer, works out which way up it is, and tells the PC to rotate
+ * the display to match.
+ *
+ * Before it can do any of that it has to get onto the network, and it has no keyboard with which
+ * to be told the Wi-Fi password. So on first boot -- or whenever the stored credentials stop
+ * working -- it brings up its own access point and waits for @c ap_provision to connect and hand
+ * it the credentials over an encrypted TCP session. Once it has them, it joins the real network as
+ * a station and the AP is torn down.
+ *
+ * @note The vendored drivers this firmware builds on -- Bosch's BMA400 API, and the HD44780 LCD
+ *       driver from esp-idf-lib -- are deliberately excluded from these docs. They are not ours to
+ *       document, they carry their own upstream documentation, and including them would bury this
+ *       project's own code under several thousand lines of third-party source. Only the wrappers
+ *       written for this project (@c sensor.c, @c lcd.c) appear here.
+ */
+
+/**
+ * @defgroup shared Shared Protocol
+ * @brief The wire format, spoken by both sides.
+ *
+ * @c common.h is the contract between the PC and the ESP. It defines the packet layout, the
+ * message identifiers, the checksum, and the crypto parameters -- and it is compiled into BOTH
+ * binaries, which is what guarantees the two halves cannot silently disagree about the format.
+ *
+ * That shared compilation is also why these docs are built as one tree rather than three. Split
+ * the build and @c proto_packet_t appears twice, in two doc sets, with the PC's references
+ * unable to link to the ESP's copy and vice versa. Here it is one page, and both sides link to it.
+ *
+ * @warning Any change to @c proto_packet_t, to the @c MSG_* identifiers, or to the crypto
+ *          constants must be flashed to the ESP and rebuilt on the PC together. A version skew
+ *          between the two does not fail loudly: the packets still arrive, the checksum still
+ *          passes, and the receiving side quietly misreads every field.
+ */
