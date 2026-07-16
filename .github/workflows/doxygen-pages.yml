@@ -1,0 +1,78 @@
+# .github/workflows/doxygen-pages.yml
+#
+# Build the Doxygen documentation and publish it to GitHub Pages.
+#
+# Uses the GitHub-native Pages flow (configure-pages -> upload-pages-artifact ->
+# deploy-pages): no gh-pages branch, no committed HTML, no stored credentials. The
+# GITHUB_TOKEN is minted per-run. This keeps the generated docs out of git history,
+# which is exactly why doxygen/ is gitignored.
+#
+# Graphviz is installed explicitly: the Doxyfile builds include/dependency graphs
+# (HAVE_DOT), and without `dot` on PATH every graph SVG comes out empty.
+
+name: Deploy Doxygen to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # lets you trigger it by hand from the Actions tab
+
+# Least privilege: only what deploy-pages needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; don't cancel an in-flight production deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Doxygen and Graphviz
+        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
+
+      - name: Generate docs
+        run: doxygen Doxyfile
+
+      # The READMEs reference diagrams with repo-relative paths, e.g.
+      # <img src="images/dataflow.svg">. GitHub resolves those against the repo, but
+      # Doxygen does NOT copy images referenced by <img>/Markdown into its output
+      # (only its own \image command does). So the same tag that renders on GitHub
+      # would 404 on Pages. Copying the image directories into the HTML output,
+      # preserving their paths, makes the identical <img src="images/..."> and
+      # src="mcu/docs/schematic/..."> resolve on Pages too -- no per-file \image
+      # directives, no dual references in the Markdown.
+      - name: Copy diagrams into the docs output
+        run: |
+          mkdir -p doxygen/html/images doxygen/html/mcu/docs/schematic
+          cp images/*.svg doxygen/html/images/ 2>/dev/null || true
+          cp mcu/docs/schematic/*.svg doxygen/html/mcu/docs/schematic/ 2>/dev/null || true
+
+      - name: Ensure underscores work on Pages
+        run: touch doxygen/html/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: doxygen/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
