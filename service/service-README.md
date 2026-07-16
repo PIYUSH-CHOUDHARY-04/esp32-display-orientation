@@ -1,4 +1,4 @@
-# `service/` — starting the daemon at login
+# The service/ directory — starting the daemon at login
 
 One route: **XDG autostart**. `./install.sh install` sets it up. You shouldn't need to touch
 anything here, but this explains what it did and why.
