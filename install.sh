@@ -20,6 +20,7 @@
 #   ./install.sh install          build, then install binaries + the login service
 #   ./install.sh clean            clean both halves
 #   ./install.sh env              (re)detect the ESP-IDF and regenerate env/idf_env.sh
+#   ./install.sh --help           print usage and exit
 #   ./install.sh <anything else>  forwarded verbatim to idf.py
 # @endverbatim
 #
@@ -56,7 +57,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"	            ##< Repository root (this file's directory).
 CLIENT_DIR="$ROOT/client"				                            ##< PC-side sources and Makefile.
 MCU_DIR="$ROOT/mcu"					                                ##< ESP-IDF project.
-SERVICE_DIR="$ROOT/service"				                            ##< The two autostart routes: systemd/ and autostart/.
+SERVICE_DIR="$ROOT/service"				                            ##< Holds the autostart route: the .desktop entry and its session wrapper.
 ENV_DIR="$ROOT/env"					                                ##< Generated environment lives here.
 ENV_TEMPLATE="$ENV_DIR/idf_env.sh.in"			                    ##< Shipped template, with @c \@IDF_PATH\@ placeholders.
 ENV_SCRIPT="$ENV_DIR/idf_env.sh"			                        ##< Generated, machine-specific, gitignored.
@@ -75,7 +76,6 @@ IDF_MIN_VERSION="5.0"					                            ##< Minimum supported ESP-
 # @{
 ##
 BIN_DIR="$HOME/.local/bin"				                            ##< Both binaries land here; on PATH by default on most distros.
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"		                ##< Where a systemd USER unit belongs.
 DAEMON_NAME="esp_daemon"				                            ##< The daemon: built, installed and serviced under one name.
 PROV_NAME="ap_provision"				                            ##< The interactive provisioning utility.
 WRAPPER_NAME="esp_daemon-session"			                        ##< Session wrapper; holds the restart loop for the autostart route.
@@ -104,6 +104,39 @@ say() {
 die() {
 	echo "==> ERROR: $*" >&2
 	exit 1
+}
+
+##
+# @brief Print the usage text and exit.
+#
+# The whole-project verbs are listed; the "anything else -> idf.py" passthrough is noted rather
+# than enumerated, for the same reason the dispatcher does not enumerate it -- keeping a copy of
+# idf.py's command list in sync with upstream would be a maintenance treadmill.
+##
+usage() {
+	cat <<-EOF
+	usage: ./install.sh [command]
+
+	  (no command)   build both halves (the PC binaries and the firmware)
+	  client         build the PC binaries only
+	  mcu            build the firmware only
+	  install        build, then install the binaries and the login service
+	  clean          clean both halves
+	  env            (re)detect the ESP-IDF and regenerate env/idf_env.sh
+	  --help         this message
+
+	Anything not listed above is forwarded verbatim to idf.py, so the usual firmware
+	commands work through this script without being enumerated here:
+
+	  ./install.sh flash
+	  ./install.sh monitor
+	  ./install.sh -p /dev/ttyUSB1 flash monitor
+
+	The daemon and the provisioning utility install under ~/.local/bin, and the login
+	service is a per-user XDG autostart entry -- nothing here needs root.
+	EOF
+
+	exit 0
 }
 
 ##
@@ -644,72 +677,39 @@ clean_all() {
 }
 
 ##
-# @brief Identify the init system by inspecting PID 1.
+# @name The login service: one route, and why
 #
-# @c /proc/1/comm names the process the kernel started as PID 1, which is the only authoritative
-# answer. Probing for @c systemctl on @c PATH is not: the binary can be present on a machine that
-# boots something else entirely, and would give a false positive.
-#
-# Only systemd is distinguished, because only systemd changes the outcome -- see
-# ::choose_service_route.
-#
-# @return @c systemd, or @c other.
-##
-detect_init() {
-	local pid1=""
-
-	if [ -r /proc/1/comm ]; then
-		pid1="$(cat /proc/1/comm 2>/dev/null || true)"
-	fi
-
-	if [ "$pid1" = "systemd" ]; then
-		echo "systemd"
-	else
-		echo "other"
-	fi
-}
-
-##
-# @brief Decide HOW the daemon will be started at login.
-#
-# Two routes, and the reasoning behind the split is the crux of the whole deployment design.
-#
-# ### The constraint every route must satisfy
 # The daemon rotates the screen with @c xrandr, which can only reach an X server if it holds that
 # session's @c DISPLAY and its @c XAUTHORITY cookie. So the daemon MUST run as the logged-in user,
 # INSIDE their session. Anything else is refused by X -- silently -- and every rotation fails while
 # the daemon reports itself perfectly healthy.
 #
-# ### systemd: a user unit
-# systemd has a per-user manager, so it can express "start this inside the session" natively, and
-# supervise it properly: @c Restart=on-failure with backoff, a crash-loop limit, journald
-# integration, and @c "systemctl --user status". Strictly the better option, and it is used
-# whenever systemd is PID 1.
+# There is exactly one mechanism that satisfies that on every desktop and every init system: XDG
+# autostart. @c ~/.config/autostart is read by the DESKTOP SESSION, after the display manager has
+# authenticated the user, started X, and built the environment -- so the daemon starts as that user,
+# in that session, with both variables already present. No root, nothing substituted, per-user by
+# construction (two people on one machine each get their own, in their own home).
 #
-# ### Everything else: XDG autostart
-# OpenRC, runit, s6 and SysV are SYSTEM supervisors. They start services at BOOT, as ROOT, when
-# nobody is logged in and no X server exists -- so a service they start has no cookie and cannot
-# talk to X. And they offer no login hook to use instead, because they have no concept of a login:
-# the display manager owns that, long after init has finished.
+# ### Why not a systemd user unit, since systemd could express this too?
+# It can, via @c graphical-session.target -- but that target is a CONVENTION, not a guarantee.
+# GNOME and KDE activate it; Cinnamon, XFCE, i3, sway and others frequently do not, and on those the
+# unit sits inert inside a perfectly good X session while @c "systemctl --user enable" reports
+# success. That failure is silent and baffling. Binding to @c default.target instead trades one
+# silent failure for another (it is reached for SSH logins too, with no DISPLAY). The autostart
+# directory, by contrast, is read by the session itself and so is always in step with the session's
+# lifetime -- which is the entire property we need. Rather than ship two routes that behave
+# differently on different desktops, the installer ships the one that behaves the same everywhere.
 #
-# @c ~/.config/autostart is read by the DESKTOP SESSION, after the display manager has
-# authenticated the user, started X, and built the environment. The daemon therefore starts as that
-# user, in that session, with both variables already present. No root, nothing substituted, and
-# per-user by construction -- two people on one machine each get their own, in their own home.
+# ### Why not a system init script (OpenRC, runit, s6, SysV)?
+# They are SYSTEM supervisors: they start services at BOOT, as ROOT, when nobody is logged in and no
+# X server exists -- so a service they start has no cookie and cannot talk to X. They offer no login
+# hook to use instead, because they have no concept of a login; the display manager owns that, long
+# after init has finished.
 #
 # The one thing autostart lacks is supervision, which the wrapper it launches supplies with a
-# restart loop. A fair trade: the daemon's own main loop already recovers from every network
-# failure internally, so the wrapper is a backstop rather than a crutch.
-#
-# @return @c systemd or @c autostart.
+# restart loop. A fair trade: the daemon's own main loop already recovers from every network failure
+# internally, so the wrapper is a backstop rather than a crutch.
 ##
-choose_service_route() {
-	if [ "$(detect_init)" = "systemd" ]; then
-		echo "systemd"
-	else
-		echo "autostart"
-	fi
-}
 
 ##
 # @brief Warn if the session is Wayland rather than X11.
@@ -778,84 +778,41 @@ render() {
 }
 
 ##
-# @brief Install the systemd user unit and start it.
-##
-install_systemd() {
-	local unit="$HOME/.config/systemd/user/$DAEMON_NAME.service"
-
-	render "systemd/$DAEMON_NAME.service" "$unit" 0644
-
-	systemctl --user daemon-reload
-	systemctl --user enable "$DAEMON_NAME.service"
-
-	say "[install] enabled -- it will start at every graphical login."
-
-	##
-	# 'enable' writes a symlink into default.target.wants/ and starts nothing. That target was
-	# reached at login, long before this unit existed, so nothing will pull it in now. Without an
-	# explicit start the daemon sits idle until the next login -- a baffling thing to hand somebody
-	# who has just run an installer and watched it report success.
-	#
-	# The condition is DISPLAY, not graphical-session.target.
-	#
-	# Testing the target was the original approach, and it was wrong: the target is a convention
-	# that many desktops -- Cinnamon, XFCE, i3 among them -- never activate at all. On those
-	# systems it reads 'inactive' inside a perfectly good X session, so this branch would decline
-	# to start a daemon that was ready to run, and then promise it would start at the next login,
-	# which was also false, because nothing would ever pull the target then either.
-	#
-	# DISPLAY is what actually matters. It is set if and only if there is an X server to talk to,
-	# which is the entire question being asked.
-	##
-	if [ -n "${DISPLAY:-}" ]; then
-		say "[install] an X session is active (DISPLAY=$DISPLAY) -- starting it now ..."
-
-		if systemctl --user start "$DAEMON_NAME.service" 2>/dev/null; then
-			say "[install] started."
-		else
-			say "[install] WARNING: it failed to start. Check:"
-			say "[install]     journalctl --user -u $DAEMON_NAME -n 50"
-		fi
-	else
-		say "[install] no X session in this shell -- it will start at your next graphical login."
-		say "[install] (installing over SSH or from a TTY is fine; the daemon needs X only when"
-		say "[install]  it RUNS, and the unit will not start without a DISPLAY.)"
-	fi
-
-	say "[install]"
-	say "[install] status:  systemctl --user status $DAEMON_NAME"
-	say "[install] logs:    journalctl --user -u $DAEMON_NAME -f"
-	say "[install] stop:    systemctl --user stop $DAEMON_NAME"
-}
-
-##
 # @brief Install the XDG autostart entry and its wrapper, and start it.
 #
-# Two files: the @c .desktop entry the desktop session reads, and the wrapper it launches. The
-# wrapper holds the restart loop, because @c Exec= in a @c .desktop file is parsed by the desktop
+# Two files: the @c .desktop entry the desktop session reads at login, and the wrapper it launches.
+# The wrapper holds the restart loop, because @c Exec= in a @c .desktop file is parsed by the desktop
 # rather than by a shell and cannot express one.
+#
+# This is the only route the installer sets up; see the "one route, and why" notes above for the
+# reasoning. There is nothing to "enable" -- placing the @c .desktop file IS enabling it, since the
+# desktop re-reads @c ~/.config/autostart afresh at every login.
 ##
-install_autostart() {
+install_service() {
 	render "autostart/$DAEMON_NAME.desktop" "$HOME/.config/autostart/$DAEMON_NAME.desktop" 0644
 	render "autostart/$WRAPPER_NAME"        "$BIN_DIR/$WRAPPER_NAME"                        0755
 
 	say "[install] autostart entry installed -- it will start at your next login."
 	say "[install]"
-	say "[install] Your init system is not systemd, so the DESKTOP SESSION starts the"
-	say "[install] daemon rather than the init system. It runs as you, inside your"
-	say "[install] session, so it inherits DISPLAY and XAUTHORITY for free -- no root,"
-	say "[install] and no username baked into a file in /etc."
+	say "[install] The DESKTOP SESSION starts the daemon, so it runs as you, inside your"
+	say "[install] session, and inherits DISPLAY and XAUTHORITY for free -- no root, and no"
+	say "[install] username baked into a file in /etc."
 	say "[install]"
 
 	##
-	# Nothing to "enable" -- placing the file IS enabling it, since the desktop reads the directory
-	# afresh at every login. But this login already happened, so start it by hand if there is a
-	# session to start it in.
+	# This login already happened, so the desktop will not re-scan the directory until the next one.
+	# Start it by hand now if there is a session to start it in.
+	#
+	# Output is deliberately NOT redirected to a file here. The daemon writes plain text to stdout and
+	# stderr and lets whatever launches it decide where that lands (see client/include/log.h). At the
+	# next login that "whatever" is the desktop session, which routes it to ~/.xsession-errors on most
+	# desktops. Starting it by hand here inherits THIS shell's stdout/stderr instead -- so on an
+	# interactive install you see the first lines right here, which is a useful confirmation.
 	##
 	if [ -n "${DISPLAY:-}" ]; then
 		say "[install] an X session is active -- starting it now ..."
 
-		nohup "$BIN_DIR/$WRAPPER_NAME" >/dev/null 2>&1 &
+		setsid "$BIN_DIR/$WRAPPER_NAME" &
 		disown 2>/dev/null || true
 
 		say "[install] started."
@@ -864,6 +821,7 @@ install_autostart() {
 	fi
 
 	say "[install]"
+	say "[install] logs:    ~/.xsession-errors      (where most desktops send session output)"
 	say "[install] stop:    pkill -f $WRAPPER_NAME"
 	say "[install] disable: rm ~/.config/autostart/$DAEMON_NAME.desktop"
 }
@@ -871,9 +829,9 @@ install_autostart() {
 ##
 # @brief Install the binaries and the login-time service.
 #
-# Everything lands under @c $HOME -- @c ~/.local/bin for the binaries, @c ~/.config for the service
-# -- so nothing here needs root, on either route. That is not a convenience: a daemon that must
-# hold the user's X cookie has no business running as root in the first place.
+# Everything lands under @c $HOME -- @c ~/.local/bin for the binaries, @c ~/.config/autostart for
+# the service -- so nothing here needs root. That is not a convenience: a daemon that must hold the
+# user's X cookie has no business running as root in the first place.
 ##
 do_install() {
 	build_client
@@ -905,15 +863,7 @@ do_install() {
 
 	check_display_server
 
-	local route
-	route="$(choose_service_route)"
-
-	say "[install] init system: $(detect_init)  ->  using the $route route"
-
-	case "$route" in
-		systemd)	install_systemd ;;
-		autostart)	install_autostart ;;
-	esac
+	install_service
 
 	say "[install] done."
 }
@@ -954,6 +904,9 @@ case "$cmd" in
 
 		check_idf_version "$idf"
 		generate_env "$idf"
+		;;
+	--help|-h|help)
+		usage
 		;;
 	*)
 		idf_run "$@"

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="600" viewBox="0 0 820 600" font-family="'DejaVu Sans','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1 L8 5 L2 9" fill="none" stroke="#5b6b7f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <style>
+    .esp   { fill:#e1f5ee; stroke:#0f6e56; stroke-width:1.4; }
+    .pc    { fill:#e6f1fb; stroke:#185fa5; stroke-width:1.4; }
+    .prov  { fill:#faeeda; stroke:#854f0b; stroke-width:1.4; }
+    .h1    { fill:#1d2733; font-size:18px; font-weight:600; }
+    .hd    { fill:#1d2733; font-size:14px; font-weight:600; }
+    .sub   { fill:#5b6b7f; font-size:12px; }
+    .tt    { fill:#1d2733; font-size:14px; font-weight:600; }
+    .ts    { fill:#5b6b7f; font-size:12px; }
+    .arr   { stroke:#5b6b7f; stroke-width:1.6; fill:none; }
+    .lbl   { fill:#5b6b7f; font-size:11.5px; }
+  </style>
+
+  <text class="h1" x="30" y="34">ESP32 display-orientation — system data flow</text>
+
+  <!-- PROVISIONING BAND -->
+  <text class="hd"  x="30" y="70">Provisioning — entered whenever no known router is reachable</text>
+  <text class="sub" x="30" y="88">empty creds · changed SSID/password · different router (home ↔ work) · router absent</text>
+
+  <rect class="prov" x="30" y="104" width="230" height="58" rx="9"/>
+  <text class="tt" x="145" y="128" text-anchor="middle">ap_provision (PC)</text>
+  <text class="ts" x="145" y="148" text-anchor="middle">stores creds encrypted</text>
+
+  <line class="arr" x1="262" y1="133" x2="556" y2="133" marker-end="url(#ah)"/>
+  <text class="lbl" x="409" y="122" text-anchor="middle">AES-256-GCM over TCP</text>
+  <text class="lbl" x="409" y="152" text-anchor="middle">session key from pairing code</text>
+
+  <rect class="prov" x="560" y="104" width="230" height="58" rx="9"/>
+  <text class="tt" x="675" y="128" text-anchor="middle">ESP AP + server</text>
+  <text class="ts" x="675" y="148" text-anchor="middle">joins Wi-Fi, tears down AP</text>
+
+  <!-- divider -->
+  <line x1="30" y1="192" x2="790" y2="192" stroke="#c7d0da" stroke-width="1" stroke-dasharray="5 4"/>
+
+  <!-- STEADY STATE BAND -->
+  <text class="hd" x="30" y="224">Steady state — orientation loop (once joined)</text>
+
+  <rect class="esp" x="30" y="244" width="200" height="60" rx="9"/>
+  <text class="tt" x="130" y="270" text-anchor="middle">BMA400</text>
+  <text class="ts" x="130" y="290" text-anchor="middle">settles → INT1 fires</text>
+
+  <line class="arr" x1="232" y1="274" x2="288" y2="274" marker-end="url(#ah)"/>
+
+  <rect class="esp" x="290" y="244" width="200" height="60" rx="9"/>
+  <text class="tt" x="390" y="270" text-anchor="middle">sensor_task</text>
+  <text class="ts" x="390" y="290" text-anchor="middle">derives orientation</text>
+
+  <line class="arr" x1="492" y1="274" x2="548" y2="274" marker-end="url(#ah)"/>
+
+  <rect class="esp" x="550" y="244" width="200" height="60" rx="9"/>
+  <text class="tt" x="650" y="270" text-anchor="middle">wifi_mgr</text>
+  <text class="ts" x="650" y="290" text-anchor="middle">TCP session</text>
+
+  <!-- down to daemon -->
+  <line class="arr" x1="650" y1="304" x2="650" y2="360" marker-end="url(#ah)"/>
+  <text class="lbl" x="662" y="336" text-anchor="start">MSG_ORIENTATION</text>
+
+  <rect class="pc" x="550" y="360" width="200" height="60" rx="9"/>
+  <text class="tt" x="650" y="386" text-anchor="middle">esp_daemon</text>
+  <text class="ts" x="650" y="406" text-anchor="middle">receives, ACKs</text>
+
+  <!-- across to xrandr -->
+  <line class="arr" x1="548" y1="390" x2="292" y2="390" marker-end="url(#ah)"/>
+  <text class="lbl" x="420" y="380" text-anchor="middle">rotate command</text>
+
+  <rect class="pc" x="90" y="360" width="200" height="60" rx="9"/>
+  <text class="tt" x="190" y="386" text-anchor="middle">xrandr</text>
+  <text class="ts" x="190" y="406" text-anchor="middle">rotates the display</text>
+
+  <!-- legend -->
+  <line x1="30" y1="456" x2="790" y2="456" stroke="#c7d0da" stroke-width="1"/>
+  <rect class="esp"  x="30"  y="474" width="15" height="15" rx="3"/>
+  <text class="ts" x="52" y="486">ESP32 firmware</text>
+  <rect class="pc"   x="200" y="474" width="15" height="15" rx="3"/>
+  <text class="ts" x="222" y="486">Linux PC</text>
+  <rect class="prov" x="330" y="474" width="15" height="15" rx="3"/>
+  <text class="ts" x="352" y="486">provisioning (as needed)</text>
+
+  <text class="lbl" x="30" y="520">The interrupt fires on settle (activity → inactivity), not on movement, so the display rotates once to the final orientation rather than</text>
+  <text class="lbl" x="30" y="538">flapping through transient mid-turn angles. Protocol defined in common/common.h, compiled into both binaries.</text>
+</svg>

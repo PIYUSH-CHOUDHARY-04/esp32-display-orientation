@@ -58,7 +58,7 @@ doxygen/
 # walks into it -- and only then can the negation take effect.
 mcu/docs/*
 !mcu/docs/README.md
-
+!mcu/docs/schematic/
 
 # =============================================================================
 #  Editor litter

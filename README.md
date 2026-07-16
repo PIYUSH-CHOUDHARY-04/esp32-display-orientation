@@ -9,6 +9,29 @@ between reading a document and writing code.
 
 ---
 
+## Demo
+
+<!--
+  TODO — when you have a clip of the board rotating and the monitor following:
+    1. Save a short looping GIF as images/demo.gif (GitHub autoplays GIFs inline; keep it under ~10 MB),
+       then uncomment the <img> block below.
+    2. Upload the full-quality video as a GitHub Release asset or an unlisted YouTube video,
+       and replace VIDEO_URL in the link below with its URL.
+  Leaving the <img> commented until the GIF exists avoids showing a broken image on the page.
+-->
+
+<!--
+<p align="center">
+  <img src="images/demo.gif" alt="The board is rotated and the monitor follows" width="640">
+</p>
+-->
+
+A short demo video is available here: [watch the board rotate the display](VIDEO_URL).
+
+_(Recording pending — turn the board, and the monitor follows.)_
+
+---
+
 ## Requirements
 
 **This needs X11.** It will not work on Wayland — the rotation is done by `xrandr`, and `xrandr`
@@ -20,14 +43,18 @@ the login screen.
 echo $XDG_SESSION_TYPE     # should say "x11"
 ```
 
-| What          | You need                                                             |
-| ------------- | -------------------------------------------------------------------- |
-| **PC**        | Linux with X11, `xrandr`, NetworkManager (`nmcli`), OpenSSL >= 1.1.0 |
-| **Board**     | ESP32 + BMA400 accelerometer + HD44780 I2C LCD (optional)            |
-| **Toolchain** | ESP-IDF **v5.0 or newer** (built and tested on v5.5.3)               |
+| What          | You need                                                                 |
+| ------------- | -------------------------------------------------------------------------|
+| **PC**        | Linux with X11, `xrandr`, NetworkManager (`nmcli`), OpenSSL >= 1.1.0     |
+| **Board**     | ESP32 + BMA400 accelerometer + HD44780 I²C LCD (shows the pairing code)  |
+| **Toolchain** | ESP-IDF **v5.0 or newer** (built and tested on v5.5.3)                   |
 
 The installer checks all of these and tells you exactly what's missing, rather than letting the
 build fail with a wall of compiler errors.
+
+**Wiring the board:** the BMA400 connects over SPI and the LCD over I²C — see
+[`mcu/docs/schematic/`](mcu/docs/schematic/) for the wiring diagram and the exact GPIO assignments
+(and one note worth reading if you power the LCD backpack at 5 V).
 
 **On recent Intel graphics (Raptor Lake and similar), you may also need the `intel` DDX driver.**
 X's default `modesetting` driver mishandles rotation on this hardware — the screens flicker and then
@@ -39,7 +66,8 @@ it's a one-file config change.
 ## Quickstart
 
 ```sh
-git clone <your-repo-url> && cd test
+git clone https://github.com/PIYUSH-CHOUDHARY-04/esp32-display-orientation
+cd esp32-display-orientation
 
 ./install.sh install          # builds both halves, installs the daemon and the service
 ./install.sh flash            # flashes the firmware to a connected ESP32
@@ -59,6 +87,13 @@ That's it. The daemon is already running, and starts by itself at every login fr
 
 ## How it works
 
+<p align="center">
+  <img src="images/dataflow.svg" alt="ESP32 display-orientation system data flow" width="720">
+</p>
+
+<details>
+<summary>Text version (if the diagram above doesn't render)</summary>
+
 ```
    ┌─────────────────────┐                      ┌──────────────────────┐
    │       ESP32         │                      │      Linux PC        │
@@ -72,6 +107,8 @@ That's it. The daemon is already running, and starts by itself at every login fr
    └─────────────────────┘                      └──────────────────────┘
 ```
 
+</details>
+
 The ESP reads the accelerometer, works out its orientation, and sends a command. The daemon
 acknowledges it and calls `xrandr`. The protocol is defined in `common/common.h` and compiled into
 **both** binaries — which is what stops the two halves from silently disagreeing about the wire
@@ -79,10 +116,12 @@ format.
 
 ### Getting the board onto your Wi-Fi
 
-The ESP has no keyboard, so it can't be told the Wi-Fi password directly. On first boot it brings up
-its own temporary access point and waits. `ap_provision` connects to it, hands over the credentials
-inside an encrypted session, and disconnects — after which the ESP joins your real network and the
-AP disappears.
+The ESP has no keyboard, so it can't be told the Wi-Fi password directly. Whenever it can't reach a
+known router — first boot with no stored credentials, a changed SSID or password, a different router
+(home vs. workplace), or the saved router simply being absent — it falls back to bringing up its own
+temporary access point and waits. `ap_provision` connects to it, hands over the credentials inside an
+encrypted session, and disconnects — after which the ESP joins your real network and the AP
+disappears.
 
 **Two separate secrets are involved, and confusing them defeats the design:**
 
@@ -97,11 +136,11 @@ The pairing code is not the user key and cannot substitute for it.
 
 ## The two binaries
 
-**`esp_daemon`** — the long-running daemon. Discovers the ESP on your network, holds a TCP session
+`esp_daemon` — the long-running daemon. Discovers the ESP on your network, holds a TCP session
 with it, and rotates the display when a command arrives. Runs inside your login session, dies with
 it.
 
-**`ap_provision`** — an interactive tool, run by hand:
+`ap_provision` — an interactive tool, run by hand:
 
 ```sh
 ap_provision --set_creds      # store new Wi-Fi credentials (prompts, encrypts, writes)
@@ -126,9 +165,10 @@ Both install to `~/.local/bin`. **Nothing here needs `sudo`.**
 ├── mcu/             the ESP32 firmware (ESP-IDF project)
 │   ├── main/
 │   ├── components/      sensor, LCD, Wi-Fi manager, logging
-│   └── docs/            datasheet links (the PDFs themselves are gitignored)
+│   └── docs/            datasheet links (PDFs gitignored) + schematic/ (wiring diagram + notes)
 ├── service/         how the daemon starts at login  (see service/README.md)
 ├── contrib/         optional configs -- currently the Intel DDX workaround
+├── images/          diagrams the README references (data-flow, etc.)
 ├── env/             generated ESP-IDF environment
 ├── install.sh
 ├── uninstall.sh
@@ -149,6 +189,7 @@ Everything goes through one script.
 | `./install.sh install` | build, then install the binaries and the login service |
 | `./install.sh clean`   | clean both halves                                      |
 | `./install.sh env`     | re-detect the ESP-IDF and regenerate `env/idf_env.sh`  |
+| `./install.sh --help`  | print the full command list and exit                   |
 | *anything else*        | forwarded straight to `idf.py`                         |
 
 So `flash`, `monitor`, `menuconfig` and the rest all work:
@@ -179,26 +220,29 @@ one sentence.
 
 ## Autostart
 
-The daemon starts at login and stops at logout. Two routes, picked automatically:
+The daemon starts at login and stops at logout, via an **XDG autostart** entry:
 
-| Your init system | What gets installed        | Root? |
-| ---------------- | -------------------------- | ----- |
-| systemd          | a **user** unit            | no    |
-| anything else    | an XDG **autostart** entry | no    |
+| What gets installed        | Root? |
+| -------------------------- | ----- |
+| an XDG **autostart** entry | no    |
 
-Both start the daemon **inside your session, as you** — which is the whole point. `xrandr` can only
+It starts the daemon **inside your session, as you** — which is the whole point. `xrandr` can only
 reach an X server if it has that session's `DISPLAY` and its `XAUTHORITY` cookie, and a service
 started as root at boot has neither. It would connect to the ESP, acknowledge every command, and
 rotate nothing at all, while every log line looked perfectly healthy.
 
-**Both routes are per-user.** Two people on the same machine each get their own; neither can
-overwrite the other.
+XDG autostart is a freedesktop.org standard read by the desktop session itself, so it works the same
+on every desktop (GNOME, KDE, XFCE, Cinnamon, i3, sway, …) and every init system — and it's
+**per-user**, so two people on the same machine each get their own entry and neither can overwrite
+the other. (systemd *user* units can do this too, but only where the desktop activates
+`graphical-session.target`, which many don't — so the installer uses the one mechanism that behaves
+identically everywhere. The reasoning is laid out in full in `service/README.md`.)
 
 Full details, including how to write your own, are in `service/README.md`.
 
 ```sh
-systemctl --user status esp_daemon      # systemd
-journalctl --user -u esp_daemon -f      # what is it doing?
+pkill -f esp_daemon-session                 # stop it now
+rm ~/.config/autostart/esp_daemon.desktop   # disable it permanently
 ```
 
 ---
@@ -209,6 +253,17 @@ The daemon writes plain text to stdout and stderr and lets whatever started it d
 lands — so there's no journald dependency, no syslog dependency, and one binary that works
 everywhere.
 
+Because the desktop session launches it, its output goes wherever your session sends the output of
+things it starts — on most desktops, `~/.xsession-errors`:
+
+```sh
+tail -f ~/.xsession-errors              # follow the daemon live
+grep esp_daemon ~/.xsession-errors      # just its lines
+```
+
+A few setups differ (some route it to the journal, a bare `.xinitrc` sends it to its TTY); the full
+table, and how to pin it to a file you control, is in `service/README.md`.
+
 Verbosity, without recompiling:
 
 ```sh
@@ -216,7 +271,8 @@ LOG_LEVEL=debug esp_daemon              # error | warn | info | debug | verbose
 esp_daemon -v                           # same thing
 ```
 
-Under systemd, uncomment `Environment=LOG_LEVEL=debug` in the unit and restart it.
+To make it permanent, add `export LOG_LEVEL=debug` to the wrapper
+(`~/.local/bin/esp_daemon-session`), above the loop, and log back in.
 
 ---
 
@@ -227,9 +283,10 @@ Under systemd, uncomment `Environment=LOG_LEVEL=debug` in the unit and restart i
 ./uninstall.sh --clean        # ... and the build artifacts
 ./uninstall.sh --purge        # ... and the stored Wi-Fi credentials
 ./uninstall.sh --all          # both of the above
+./uninstall.sh --help         # list these options and exit
 ```
 
-**`--purge` cannot be undone.** The user key protecting your credentials is never stored anywhere, so
+**Warning: `--purge` cannot be undone.** The user key protecting your credentials is never stored anywhere, so
 once the encrypted file is gone there is nothing left to decrypt and no key to decrypt it with — not
 even for you. That's why it's opt-in rather than part of a normal uninstall.
 

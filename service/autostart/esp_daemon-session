@@ -4,7 +4,8 @@
 # @brief Session wrapper: runs the daemon, and restarts it if it dies unexpectedly.
 #
 # Installed to ~/.local/bin/esp_daemon-session and launched by the XDG autostart entry at login.
-# On a non-systemd machine this is the supervisor -- all of it.
+# This is the supervisor -- all of it. The project uses the XDG autostart route on every system,
+# so there is no init-supervised alternative to fall back on; the restart loop below is it.
 #
 # ### Why a wrapper exists at all
 # The .desktop file's Exec= key is parsed by the DESKTOP, not by a shell. It is not a shell command

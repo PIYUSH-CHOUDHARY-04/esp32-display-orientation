@@ -59,11 +59,19 @@ INPUT                  = README.md \
                          client/include \
                          common \
                          mcu/main \
-                         mcu/components
+                         mcu/components \
+                         mcu/docs/schematic
 
 # The main page of the generated docs is the project README, so there is one story rather than
 # two that drift apart.
 USE_MDFILE_AS_MAINPAGE = README.md
+
+# Where Doxygen looks for images referenced by the docs (the data-flow diagram on the main page,
+# the wiring diagram in the schematic page). Without this, <img src="..."> and \image paths resolve
+# on GitHub but NOT in the generated HTML -- Doxygen only copies an image into the output if it
+# finds it on IMAGE_PATH. Both directories are listed so a page can reference either.
+IMAGE_PATH             = images \
+                         mcu/docs/schematic
 
 FILE_PATTERNS          = *.c \
                          *.h \
@@ -115,7 +123,8 @@ EXCLUDE                = mcu/components/BMA400_SensorAPI/bma400.c \
 # Build output, generated files, scratch files. Everything here is either machine-written or was
 # never meant to be committed.
 EXCLUDE_PATTERNS       = */build/* \
-                         */docs/* \
+                         */docs/*.pdf \
+                         mcu/docs/README.md \
                          doxygen/* \
                          *sdkconfig* \
                          *.log \

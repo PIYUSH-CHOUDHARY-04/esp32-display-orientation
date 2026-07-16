@@ -14,10 +14,8 @@
 #
 # ### What is removed by default
 # Everything @c install.sh actually created:
-# - the service, whichever route install.sh used: the systemd USER unit (stopped, disabled, unit
-#   file DELETED, and the symlink @c enable left in @c graphical-session.target.wants/ removed
-#   with it), or the XDG autostart entry and its session wrapper;
-# - @c ~/.local/bin/esp_daemon, and the session wrapper if the autostart route was used;
+# - the XDG autostart entry and its session wrapper -- the service route the installer uses;
+# - @c ~/.local/bin/esp_daemon and the session wrapper @c esp_daemon-session;
 # - @c ~/.local/bin/ap_provision;
 # - @c env/idf_env.sh, the generated ESP-IDF environment.
 #
@@ -36,8 +34,8 @@
 # of removing a binary. Use @c --purge.
 #
 # @note Nothing here needs root, because @c install.sh never used it: the binaries live under
-#       @c ~/.local/bin, and the service is either a systemd USER unit or an XDG autostart entry --
-#       both per-user, both inside @c $HOME. A SYSTEM service someone wrote by hand is a different
+#       @c ~/.local/bin, and the service is an XDG autostart entry -- per-user, inside @c $HOME.
+#       A SYSTEM service someone wrote by hand is a different
 #       matter, and is reported rather than removed; see ::report_other_services.
 ##
 
@@ -51,12 +49,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"	##< Repository root.
 CLIENT_DIR="$ROOT/client"				##< PC-side build output lives under here.
 MCU_DIR="$ROOT/mcu"					##< Firmware build output lives under here.
 BIN_DIR="$HOME/.local/bin"				##< Where install.sh put the binaries.
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"		##< Where install.sh put the user unit.
 ENV_SCRIPT="$ROOT/env/idf_env.sh"			##< The generated, machine-specific environment.
 CRED_DIR="$HOME/.ap_prov"				##< Encrypted Wi-Fi credentials. Only removed with --purge.
 DAEMON_NAME="esp_daemon"				##< The daemon: built, installed and serviced under one name.
 PROV_NAME="ap_provision"				##< The interactive provisioning utility.
-WRAPPER_NAME="esp_daemon-session"			##< Session wrapper (autostart route only).
+WRAPPER_NAME="esp_daemon-session"			##< Session wrapper; launched by the autostart entry.
 ##@}
 
 ##
@@ -122,95 +119,23 @@ parse_args() {
 }
 
 ##
-# @brief Identify the init system by inspecting PID 1. Mirrors install.sh exactly.
-# @return @c systemd, or @c other.
-##
-detect_init() {
-	local pid1=""
-
-	if [ -r /proc/1/comm ]; then
-		pid1="$(cat /proc/1/comm 2>/dev/null || true)"
-	fi
-
-	if [ "$pid1" = "systemd" ]; then
-		echo "systemd"
-	else
-		echo "other"
-	fi
-}
-
-##
-# @brief Stop the daemon and DELETE whichever service route was installed.
+# @brief Stop the daemon and DELETE the installed service.
 #
 # ### Why no state file is needed
 # install.sh recorded nothing about what it installed -- deliberately. A manifest of "what I did"
 # would be a second source of truth: it can be tampered with, deleted, or go stale when the repo
 # moves, and then the uninstaller is stranded with no fallback.
 #
-# The filesystem cannot go stale. So both routes are simply checked, and whichever files are
-# actually there are removed. Checking a route that was never installed costs nothing, because every
-# deletion is guarded -- and it means a user who switched init systems, or ran the installer twice,
-# still ends up clean.
+# The filesystem cannot go stale. The autostart entry and its wrapper are simply checked, and
+# whichever files are actually there are removed. Every deletion is guarded, so it costs nothing if
+# a piece was never installed or was already removed by hand.
 #
-# Every step is best-effort. The service may already be stopped, may never have been enabled, or the
-# files may already be gone by hand. None of that should abort the run: the goal is "it is not there
-# afterwards", not "every command returned zero".
+# Every step is best-effort. The service may already be stopped, or the files may already be gone.
+# None of that should abort the run: the goal is "it is not there afterwards", not "every command
+# returned zero".
 ##
 remove_service() {
-	say "[service] init system: $(detect_init)"
-
-	remove_systemd_route
 	remove_autostart_route
-}
-
-##
-# @brief Stop, disable, and delete the systemd user unit.
-#
-# The order matters. Deregistering AFTER deleting the unit file leaves systemd unable to find what
-# it is being asked to forget, and the symlink 'enable' planted in graphical-session.target.wants/
-# survives -- so systemd complains about a dangling reference on every subsequent daemon-reload.
-##
-remove_systemd_route() {
-	local unit="$HOME/.config/systemd/user/$DAEMON_NAME.service"
-
-	##
-	# Both possible symlink homes are checked. The unit now installs into default.target.wants/,
-	# but an older install put it under graphical-session.target.wants/ -- and a stale symlink there
-	# makes systemd complain about a dangling reference on every daemon-reload, long after the unit
-	# it points at has gone.
-	##
-	local wants_default="$HOME/.config/systemd/user/default.target.wants/$DAEMON_NAME.service"
-	local wants_legacy="$HOME/.config/systemd/user/graphical-session.target.wants/$DAEMON_NAME.service"
-
-	if ! command -v systemctl >/dev/null 2>&1; then
-		return 0
-	fi
-
-	if [ ! -f "$unit" ] && [ ! -L "$wants_default" ] && [ ! -L "$wants_legacy" ]; then
-		return 0
-	fi
-
-	systemctl --user stop    "$DAEMON_NAME.service" 2>/dev/null || true
-	systemctl --user disable "$DAEMON_NAME.service" 2>/dev/null || true
-	say "[service] stopped and disabled the systemd unit."
-
-	local w
-	for w in "$wants_default" "$wants_legacy"; do
-		if [ -L "$w" ] || [ -e "$w" ]; then
-			rm -f "$w"
-			say "[service] removed the autostart symlink: $w"
-		fi
-	done
-
-	if [ -f "$unit" ]; then
-		rm -f "$unit"
-		say "[service] DELETED $unit"
-	fi
-
-	systemctl --user daemon-reload 2>/dev/null || true
-	systemctl --user reset-failed "$DAEMON_NAME.service" 2>/dev/null || true
-
-	say "[service] systemd no longer knows about $DAEMON_NAME."
 }
 
 ##

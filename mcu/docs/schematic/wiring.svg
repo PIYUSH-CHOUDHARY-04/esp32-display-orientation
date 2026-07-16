@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="820" viewBox="0 0 900 820" font-family="'DejaVu Sans','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1 L8 5 L2 9" fill="none" stroke="#b26b00" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <style>
+    .board  { fill:#eef2f7; stroke:#5b6b7f; stroke-width:1.5; }
+    .chip   { fill:#e1f5ee; stroke:#0f6e56; stroke-width:1.5; }
+    .lcd    { fill:#fbeaf0; stroke:#993556; stroke-width:1.5; }
+    .shift  { fill:#eeedfe; stroke:#534ab7; stroke-width:1.5; }
+    .pwr    { fill:#faeeda; stroke:#854f0b; stroke-width:1.5; }
+    .h1     { fill:#1d2733; font-size:18px; font-weight:600; }
+    .title  { fill:#1d2733; font-size:14px; font-weight:600; }
+    .sub    { fill:#5b6b7f; font-size:11.5px; }
+    .pin    { fill:#1d2733; font-size:12px; font-weight:600; }
+    .gnd    { fill:#3a3a3a; font-size:11.5px; font-weight:600; }
+    .dot    { fill:#5b6b7f; }
+    .dotv   { fill:#b26b00; }
+    .dotg   { fill:#3a3a3a; }
+    .wire   { stroke:#0f6e56; stroke-width:1.8; fill:none; }
+    .wirei2c{ stroke:#993556; stroke-width:1.8; fill:none; }
+    .wirev  { stroke:#b26b00; stroke-width:2.0; fill:none; }
+    .wireg  { stroke:#3a3a3a; stroke-width:2.0; fill:none; }
+    .note   { fill:#5b6b7f; font-size:11.5px; }
+    .lgd    { font-size:13px; font-weight:600; }
+    .vlbl   { fill:#854f0b; font-size:11.5px; font-weight:600; }
+  </style>
+
+  <text class="h1"  x="30" y="34">ESP32 display-orientation — hardware wiring</text>
+  <text class="sub" x="30" y="53" font-size="12">ESP32-WROOM-32 · BMA400 over SPI3 (VSPI) · HD44780 16×2 LCD over I²C0 (PCF8574) with a level shifter</text>
+
+  <!-- ============ POWER RAIL (top) ============ -->
+  <rect class="pwr" x="30"  y="74" width="140" height="44" rx="9"/>
+  <text class="title" x="100" y="94" text-anchor="middle" font-size="12">Monitor adapter</text>
+  <text class="sub"   x="100" y="110" text-anchor="middle">12 V</text>
+
+  <line class="wirev" x1="170" y1="96" x2="214" y2="96" marker-end="url(#ah)"/>
+  <text class="vlbl"  x="192" y="88" text-anchor="middle">12 V</text>
+
+  <rect class="pwr" x="216" y="74" width="140" height="44" rx="9"/>
+  <text class="title" x="286" y="94" text-anchor="middle" font-size="12">LM buck</text>
+  <text class="sub"   x="286" y="110" text-anchor="middle">step-down to 5 V</text>
+
+  <!-- 5V rail runs right; drops feed ESP VIN, shifter HV, and LCD VCC -->
+  <line class="wirev" x1="356" y1="96" x2="620" y2="96"/>
+  <text class="vlbl"  x="450" y="88" text-anchor="middle">5 V rail</text>
+  <circle class="dotv" cx="590" cy="96" r="4"/>
+  <circle class="dotv" cx="620" cy="96" r="4"/>
+  <path class="wirev" d="M590 96 V250 H532"/>
+  <path class="wirev" d="M620 96 H770 V250"/>
+
+  <!-- ============ BMA400 (left) ============ -->
+  <rect class="chip" x="30" y="250" width="170" height="250" rx="10"/>
+  <text class="title" x="115" y="278" text-anchor="middle">BMA400</text>
+  <text class="sub"   x="115" y="295" text-anchor="middle">accelerometer</text>
+  <text class="pin" x="190" y="326" text-anchor="end">SCK</text>
+  <text class="pin" x="190" y="356" text-anchor="end">SDI (MOSI)</text>
+  <text class="pin" x="190" y="386" text-anchor="end">SDO (MISO)</text>
+  <text class="pin" x="190" y="416" text-anchor="end">CSB</text>
+  <text class="pin" x="190" y="446" text-anchor="end">INT1</text>
+  <text class="gnd" x="190" y="476" text-anchor="end">GND</text>
+  <circle class="dot" cx="200" cy="322" r="3"/>
+  <circle class="dot" cx="200" cy="352" r="3"/>
+  <circle class="dot" cx="200" cy="382" r="3"/>
+  <circle class="dot" cx="200" cy="412" r="3"/>
+  <circle class="dot" cx="200" cy="442" r="3"/>
+  <circle class="dotg" cx="115" cy="500" r="3"/>
+
+  <!-- ============ ESP32 (center) ============ -->
+  <rect class="board" x="340" y="170" width="190" height="330" rx="10"/>
+  <text class="title" x="435" y="198" text-anchor="middle">ESP32-WROOM-32</text>
+  <text class="sub"   x="435" y="215" text-anchor="middle">onboard LDO → 3.3 V IC</text>
+  <text class="vlbl" x="520" y="246" text-anchor="end">VIN (5 V)</text>
+  <circle class="dotv" cx="530" cy="250" r="3"/>
+  <text class="pin" x="352" y="326">GPIO18</text>
+  <text class="pin" x="352" y="356">GPIO23</text>
+  <text class="pin" x="352" y="386">GPIO19</text>
+  <text class="pin" x="352" y="416">GPIO5</text>
+  <text class="pin" x="352" y="446">GPIO4</text>
+  <circle class="dot" cx="340" cy="322" r="3"/>
+  <circle class="dot" cx="340" cy="352" r="3"/>
+  <circle class="dot" cx="340" cy="382" r="3"/>
+  <circle class="dot" cx="340" cy="412" r="3"/>
+  <circle class="dot" cx="340" cy="442" r="3"/>
+  <text class="pin" x="518" y="326" text-anchor="end">GPIO21</text>
+  <text class="pin" x="518" y="356" text-anchor="end">GPIO22</text>
+  <text class="vlbl" x="518" y="392" text-anchor="end">3V3</text>
+  <text class="gnd" x="435" y="484" text-anchor="middle">GND</text>
+  <circle class="dot"  cx="530" cy="322" r="3"/>
+  <circle class="dot"  cx="530" cy="352" r="3"/>
+  <circle class="dotv" cx="530" cy="388" r="3"/>
+  <circle class="dotg" cx="435" cy="500" r="3"/>
+
+  <!-- ============ LEVEL SHIFTER (center-right) ============ -->
+  <rect class="shift" x="600" y="300" width="120" height="170" rx="10"/>
+  <text class="title" x="660" y="326" text-anchor="middle" font-size="13">BSS138</text>
+  <text class="sub"   x="660" y="342" text-anchor="middle">level shifter</text>
+  <text class="pin" x="612" y="372">LV</text>
+  <text class="pin" x="612" y="398">LV1</text>
+  <text class="pin" x="612" y="424">LV2</text>
+  <text class="gnd" x="612" y="452">GND</text>
+  <circle class="dotv" cx="600" cy="368" r="3"/>
+  <circle class="dot"  cx="600" cy="394" r="3"/>
+  <circle class="dot"  cx="600" cy="420" r="3"/>
+  <circle class="dotg" cx="660" cy="470" r="3"/>
+  <text class="pin" x="708" y="372" text-anchor="end">HV</text>
+  <text class="pin" x="708" y="398" text-anchor="end">HV1</text>
+  <text class="pin" x="708" y="424" text-anchor="end">HV2</text>
+  <circle class="dotv" cx="720" cy="368" r="3"/>
+  <circle class="dot"  cx="720" cy="394" r="3"/>
+  <circle class="dot"  cx="720" cy="420" r="3"/>
+
+  <!-- ============ LCD (right) ============ -->
+  <rect class="lcd" x="770" y="250" width="120" height="250" rx="10"/>
+  <text class="title" x="830" y="278" text-anchor="middle" font-size="13">HD44780</text>
+  <text class="sub"   x="830" y="294" text-anchor="middle">16×2 LCD</text>
+  <text class="sub"   x="830" y="310" text-anchor="middle">PCF8574 0x27</text>
+  <text class="vlbl" x="782" y="342">VCC (5V)</text>
+  <text class="pin" x="782" y="398">SDA</text>
+  <text class="pin" x="782" y="424">SCL</text>
+  <text class="gnd" x="782" y="476">GND</text>
+  <circle class="dotv" cx="770" cy="338" r="3"/>
+  <circle class="dot"  cx="770" cy="394" r="3"/>
+  <circle class="dot"  cx="770" cy="420" r="3"/>
+  <circle class="dotg" cx="830" cy="500" r="3"/>
+
+  <!-- ===== power drops into pins ===== -->
+  <path class="wirev" d="M770 250 V338 H770"/>
+  <path class="wirev" d="M530 388 H565 V368 H600"/>
+
+  <!-- ===== SPI wires (straight) ===== -->
+  <line class="wire" x1="340" y1="322" x2="200" y2="322"/>
+  <line class="wire" x1="340" y1="352" x2="200" y2="352"/>
+  <line class="wire" x1="340" y1="382" x2="200" y2="382"/>
+  <line class="wire" x1="340" y1="412" x2="200" y2="412"/>
+  <line class="wire" x1="340" y1="442" x2="200" y2="442"/>
+
+  <!-- ===== I2C: ESP -> shifter LV1/LV2 ===== -->
+  <path class="wirei2c" d="M530 322 H560 V394 H600"/>
+  <path class="wirei2c" d="M530 352 H575 V420 H600"/>
+  <!-- ===== I2C: shifter HV1/HV2 -> LCD SDA/SCL ===== -->
+  <path class="wirei2c" d="M720 394 H770"/>
+  <path class="wirei2c" d="M720 420 H770"/>
+
+  <!-- ===== GROUND RAIL: all four ICs tie to a common ground line at y=525 ===== -->
+  <line class="wireg" x1="115" y1="525" x2="830" y2="525"/>
+  <path class="wireg" d="M115 500 V525"/>
+  <path class="wireg" d="M435 500 V525"/>
+  <path class="wireg" d="M660 470 V525"/>
+  <path class="wireg" d="M830 500 V525"/>
+  <!-- ground symbol at the rail's left end -->
+  <path class="wireg" d="M115 525 V545"/>
+  <line class="wireg" x1="100" y1="545" x2="130" y2="545"/>
+  <line class="wireg" x1="105" y1="551" x2="125" y2="551"/>
+  <line class="wireg" x1="110" y1="557" x2="120" y2="557"/>
+  <text class="gnd" x="140" y="551">GND (common)</text>
+
+  <!-- ============ LEGENDS (below the ground rail, clear of every box) ============ -->
+  <line x1="30" y1="590" x2="870" y2="590" stroke="#c7d0da" stroke-width="1"/>
+
+  <text class="lgd" x="30" y="618" fill="#0f6e56">BMA400 — SPI3 / VSPI</text>
+  <text class="note" x="30" y="638">GPIO18 → SCK   GPIO23 → MOSI   GPIO19 → MISO   GPIO5 → CSB   GPIO4 ← INT1   GND → common</text>
+
+  <text class="lgd" x="30" y="666" fill="#993556">LCD — I²C0 (through the level shifter)</text>
+  <text class="note" x="30" y="686">GPIO21 → SDA   GPIO22 → SCL   PCF8574 @ 0x27, 100 kHz</text>
+
+  <text class="lgd" x="30" y="714" fill="#534ab7">Level shifter — BSS138</text>
+  <text class="note" x="30" y="734">LV ← ESP 3V3   HV ← 5 V rail   LV1/HV1 = SDA   LV2/HV2 = SCL   GND → common</text>
+
+  <text class="lgd" x="30" y="762" fill="#854f0b">Power</text>
+  <text class="note" x="30" y="782">12 V (monitor adapter) → LM buck → 5 V rail → ESP VIN (onboard LDO → 3.3 V), shifter HV, and LCD VCC.</text>
+
+  <text class="note" x="30" y="810">INT1 idles low (internal pull-down); the BMA400 drives it high on settle — the rising edge wakes the sensor task. The shifter keeps the 5 V lines off GPIO21/22.</text>
+</svg>

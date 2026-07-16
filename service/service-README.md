@@ -1,12 +1,10 @@
 # `service/` — starting the daemon at login
 
-Two routes. `./install.sh install` picks one and sets it up. You shouldn't need to touch anything
-here, but this explains what it did and why.
+One route: **XDG autostart**. `./install.sh install` sets it up. You shouldn't need to touch
+anything here, but this explains what it did and why.
 
 ```
 service/
-├── systemd/
-│   └── esp_daemon.service      → ~/.config/systemd/user/esp_daemon.service
 └── autostart/
     ├── esp_daemon.desktop      → ~/.config/autostart/esp_daemon.desktop
     └── esp_daemon-session      → ~/.local/bin/esp_daemon-session
@@ -14,14 +12,13 @@ service/
 
 | PID 1 is...   | Route used    | Root? |
 | ------------- | ------------- | ----- |
-| systemd       | user unit     | no    |
-| anything else | XDG autostart | no    |
+| anything      | XDG autostart | no    |
 
-**Neither route needs `sudo`.** Everything lands under `$HOME`.
+**The route needs no `sudo`.** Everything lands under `$HOME`.
 
 ---
 
-## The problem both routes are solving
+## The problem it's solving
 
 The daemon rotates your screen by running `xrandr`. `xrandr` talks to the **X server**, and X does
 not talk to just anybody. It wants two things:
@@ -42,54 +39,17 @@ The failure is nasty, because it's *silent*: the daemon finds the ESP, connects,
 command, acknowledges every command — and the screen never moves. Everything in the log looks
 healthy.
 
-**So the daemon must start inside the session, as you.** Both routes below do exactly that. They
-just get there differently.
+**So the daemon must start inside the session, as you.** XDG autostart does exactly that.
 
 ---
 
-## Route 1 — systemd user unit
+## Why XDG autostart, and not anything else
 
-Installed to `~/.config/systemd/user/`. **Not** `/etc/systemd/system/`.
+### Not a system init script (OpenRC, runit, s6, SysV)
 
-It runs **as you**, **inside your graphical session**, so it inherits `DISPLAY` and `XAUTHORITY`
-automatically. Nothing to configure.
-
-Two lines do the real work:
-
-```ini
-PartOf=graphical-session.target
-WantedBy=graphical-session.target
-```
-
-- Session starts → daemon starts.
-- Session ends → daemon is **stopped immediately**.
-
-That second half matters more than it looks. Once X is gone the daemon has nothing to rotate. If it
-kept running it would sit in its heal loop retrying against a dead display forever — while still
-telling the ESP "got it, rotating" on every command. Dying with the session is *correct*, not just
-tidy.
-
-```sh
-systemctl --user status esp_daemon      # is it running?
-journalctl --user -u esp_daemon -f      # what is it doing?
-systemctl --user stop esp_daemon        # stop it
-```
-
-> **Don't enable lingering.** `loginctl enable-linger` keeps your user manager alive after logout,
-> which defeats all of the above and leaves the daemon running in exactly the broken state the
-> session scoping exists to prevent.
-
----
-
-## Route 2 — XDG autostart (everything else)
-
-Two files: the `.desktop` entry the desktop reads, and the wrapper it launches.
-
-### Why not an init script?
-
-Because **OpenRC, runit, s6 and SysV cannot do this.** They're *system* supervisors: they start
-things at **boot**, as **root**, when nobody is logged in and no X server exists. A service they
-start has no cookie and can't talk to X.
+Because **they can't do this.** They're *system* supervisors: they start things at **boot**, as
+**root**, when nobody is logged in and no X server exists. A service they start has no cookie and
+can't talk to X.
 
 And they offer no login hook to use instead — they have no concept of a login at all. The display
 manager owns that, long after init has finished.
@@ -98,6 +58,26 @@ You *can* work around it: hardcode a username and a cookie path into `/etc/init.
 that costs root, bakes an X cookie path into a machine-wide file, and allows exactly **one user per
 machine** — there's only one `/etc/init.d/esp_daemon`, so the second person to install overwrites
 the first.
+
+### Not a systemd user unit either
+
+This one is more subtle, because a systemd *user* unit genuinely *can* express "start inside the
+session" — that's what `graphical-session.target` is for, and on GNOME and KDE it works well, with
+real supervision (`Restart=on-failure` with backoff, a crash-loop limit, journald) as a bonus.
+
+The catch is portability. `graphical-session.target` is a **convention, not a guarantee**: the
+desktop is *supposed* to activate it so user services can bind to the session's lifetime. GNOME and
+KDE do. **Cinnamon, XFCE, i3, sway and others frequently do not** — they start a perfectly good X
+session and never tell systemd about it. On those systems the unit sits inert while
+`systemctl --user enable` reports success and plants a symlink that's never read. The daemon appears
+enabled and never starts — at install, at login, ever — and every command you'd think to run says
+the right thing. A silent failure that looks like success is the worst kind.
+
+Binding to `default.target` instead only trades one silent failure for another: that target is
+reached for an SSH login too, with no `DISPLAY`, so the unit fires with nothing to rotate.
+
+So a systemd route would behave differently on different desktops. Rather than ship that
+inconsistency, the installer ships the one mechanism that behaves the same everywhere.
 
 ### What autostart does instead
 
@@ -109,6 +89,8 @@ session**, with `DISPLAY` and `XAUTHORITY` already present.
 - **Nothing substituted.** It's already running as the right user.
 - **Per-user.** The file is in *your* home. Two people on one machine each get their own; neither
   can overwrite the other.
+- **In step with the session.** The session reads the directory itself, so the daemon's lifetime
+  matches the session's on every desktop — no target that might or might not be activated.
 
 > **This isn't desktop-specific.** The name misleads. XDG autostart is a freedesktop.org standard —
 > GNOME, KDE, XFCE, LXDE, MATE, Cinnamon, i3, sway all implement it. One file, every desktop. The
@@ -137,20 +119,22 @@ instead.
 that child exits — so the trap would never fire.
 
 ```sh
-pkill -f esp_daemon-session              # stop it now
-rm ~/.config/autostart/esp_daemon.desktop  # disable it permanently
+pkill -f esp_daemon-session                 # stop it now
+rm ~/.config/autostart/esp_daemon.desktop   # disable it permanently
 ```
 
-### What you give up versus systemd
+### What you give up, and why it doesn't matter
 
-Real supervision. systemd gives you `Restart=on-failure` with backoff, a crash-loop limit that gives
-up after 5 failures in 60s, and journald. The wrapper is a `while` loop — if the daemon fails
-*permanently* (missing `xrandr`, say), systemd stops trying; the wrapper restarts it every 2 seconds
-until you log out.
+Real supervision. A systemd unit would give you `Restart=on-failure` with backoff, a crash-loop
+limit that gives up after 5 failures in 60s, and journald. The wrapper is a `while` loop — if the
+daemon failed *permanently* (missing `xrandr`, say), systemd would stop trying; the wrapper restarts
+it every 2 seconds until you log out.
 
 In practice this rarely matters. The daemon's own main loop already recovers from every network
 failure internally — a vanished ESP, a changed IP, a dropped link are all handled without exiting.
-The wrapper is a backstop against a crash that shouldn't happen, not a crutch.
+The wrapper is a backstop against a crash that shouldn't happen, not a crutch. The one hard-failure
+case (`xrandr` genuinely missing) is loud in the log rather than silent, and is a
+fix-it-once problem, not a supervision problem.
 
 ---
 
@@ -165,10 +149,37 @@ It splits the streams the usual Unix way:
 - `INFO` and `DEBUG` → **stdout**
 - `WARN` and `ERROR` → **stderr**
 
-| Route         | Where it lands                             | How to read it                       |
-| ------------- | ------------------------------------------ | ------------------------------------ |
-| **systemd**   | journald, automatically                    | `journalctl --user -u esp_daemon -f` |
-| **autostart** | wherever your desktop sends session stdout | usually `~/.xsession-errors`         |
+Because the **desktop session** is what launches the wrapper, the daemon's output goes wherever your
+session sends the output of the things it starts. On the large majority of desktops that is:
+
+```
+~/.xsession-errors
+```
+
+```sh
+tail -f ~/.xsession-errors            # follow the daemon live
+grep esp_daemon ~/.xsession-errors    # just its lines
+```
+
+That file isn't guaranteed by a standard, so a few setups differ:
+
+| Your setup                                   | Where session output lands                               |
+| -------------------------------------------- | ---------------------------------------------------------|
+| Most desktops (GNOME/KDE/XFCE/… on X)        | `~/.xsession-errors`                                     |
+| systemd-logind desktops that capture it      | the journal: `journalctl --user` (grep for `esp_daemon`) |
+| A bare `.xinitrc` / `startx`                  | the TTY you launched X from                             |
+| A session that discards child output         | nowhere — you see nothing                                |
+
+If you land in the last row and want a guaranteed location, redirect the daemon yourself in the
+wrapper (`~/.local/bin/esp_daemon-session`), just above the `while` loop — for example:
+
+```sh
+exec >>"$HOME/.local/state/esp_daemon.log" 2>&1
+```
+
+That folds both streams into one file you control, on every desktop. It's not the default because
+the default deliberately imposes no log policy — it lets your session decide, the same way every
+other autostarted program does.
 
 ### Turning up the verbosity
 
@@ -178,19 +189,13 @@ No recompiling. `log.h` reads `LOG_LEVEL`:
 error | warn | info | debug | verbose
 ```
 
-**systemd** — uncomment the line in the unit:
-
-```ini
-Environment=LOG_LEVEL=debug
-```
-
-**autostart** — add it to the wrapper, above the `while` loop:
+Add it to the wrapper, above the `while` loop:
 
 ```sh
 export LOG_LEVEL=debug
 ```
 
-Then restart the service (or log out and back in).
+Then log out and back in (or `pkill -f esp_daemon-session` and re-run the wrapper).
 
 ---
 
@@ -222,9 +227,10 @@ echo $XDG_SESSION_TYPE      # "wayland" → this is your problem
 ```
 
 Log in to an X11/Xorg session instead. Most display managers offer this from a gear icon on the
-login screen.
+login screen. (The `.desktop` entry sets `OnlyShowIn=` to X11 desktops, so on a pure Wayland
+session it won't even start — but XWayland setups can slip through.)
 
-**2. X is refusing the connection.** Shouldn't happen on either route here, since both run inside
+**2. X is refusing the connection.** Shouldn't happen on the autostart route, since it runs inside
 your session — but if you're running the daemon by hand from `cron`, `ssh`, or a system service you
 wrote yourself, check that it actually has a cookie:
 
@@ -237,12 +243,13 @@ ls -l ~/.Xauthority
 
 ## Rolling your own
 
-If you want to start the daemon some other way — a system service, a `.xinitrc` line, a supervisor
-of your own — the contract is four points:
+If you want to start the daemon some other way — a systemd user unit on a desktop where you *know*
+`graphical-session.target` is activated, a `.xinitrc` line, a supervisor of your own — the contract
+is four points:
 
 1. **Run it as the desktop user**, not as root. `~/.local/bin/esp_daemon`
-2. **Set `DISPLAY`** — usually `:0`.
-3. **Set `XAUTHORITY`** — `/home/<user>/.Xauthority`. This is the step people forget, and the
+2. **Set the display** — `DISPLAY` is usually `:0`.
+3. **Set the auth cookie** — `XAUTHORITY` is `/home/<user>/.Xauthority`. This is the step people forget, and the
    failure is silent.
 4. **Capture stdout *and* stderr.** They're separate streams and both matter — errors go to stderr.
    If your supervisor only captures one, fold them: `exec 2>&1`.
