@@ -166,7 +166,7 @@ Both install to `~/.local/bin`. **Nothing here needs `sudo`.**
 │   ├── main/
 │   ├── components/      sensor, LCD, Wi-Fi manager, logging
 │   └── docs/            datasheet links (PDFs gitignored) + schematic/ (wiring diagram + notes)
-├── service/         how the daemon starts at login  (see service/README.md)
+├── service/         how the daemon starts at login  (see service/service-README.md)
 ├── contrib/         optional configs -- currently the Intel DDX workaround
 ├── images/          diagrams the README references (data-flow, etc.)
 ├── env/             generated ESP-IDF environment
@@ -236,9 +236,9 @@ on every desktop (GNOME, KDE, XFCE, Cinnamon, i3, sway, …) and every init syst
 **per-user**, so two people on the same machine each get their own entry and neither can overwrite
 the other. (systemd *user* units can do this too, but only where the desktop activates
 `graphical-session.target`, which many don't — so the installer uses the one mechanism that behaves
-identically everywhere. The reasoning is laid out in full in `service/README.md`.)
+identically everywhere. The reasoning is laid out in full in `service/service-README.md`.)
 
-Full details, including how to write your own, are in `service/README.md`.
+Full details, including how to write your own, are in `service/service-README.md`.
 
 ```sh
 pkill -f esp_daemon-session                 # stop it now
@@ -262,7 +262,7 @@ grep esp_daemon ~/.xsession-errors      # just its lines
 ```
 
 A few setups differ (some route it to the journal, a bare `.xinitrc` sends it to its TTY); the full
-table, and how to pin it to a file you control, is in `service/README.md`.
+table, and how to pin it to a file you control, is in `service/service-README.md`.
 
 Verbosity, without recompiling:
 

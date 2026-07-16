@@ -60,7 +60,8 @@ INPUT                  = README.md \
                          common \
                          mcu/main \
                          mcu/components \
-                         mcu/docs/schematic
+                         mcu/docs/schematic \
+                         service/service-README.md
 
 # The main page of the generated docs is the project README, so there is one story rather than
 # two that drift apart.
